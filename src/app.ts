@@ -10,6 +10,7 @@ import adminRoutes from "./routes/admin.routes";
 import playerRoutes from "./routes/player.routes";
 
 const app = express();
+app.set("trust proxy", 1);
 
 const allowedOrigins = config.corsOrigin;
 const corsOptions: cors.CorsOptions = {
@@ -21,7 +22,8 @@ const corsOptions: cors.CorsOptions = {
       return callback(null, true);
     }
     return callback(new Error("Not allowed by CORS"));
-  }
+  },
+  credentials: false
 };
 
 app.use(helmet());
