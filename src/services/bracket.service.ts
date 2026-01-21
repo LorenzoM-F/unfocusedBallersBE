@@ -33,6 +33,10 @@ type GoalRow = {
   created_at: string;
 };
 
+type GoalListRow = GoalRow & {
+  scoring_player_name: string;
+};
+
 export const listBrackets = async (tournamentId: string) => {
   const result = await pool.query<BracketRow>(
     `SELECT
@@ -202,6 +206,34 @@ export const createGoal = async (
     minute: goal.minute,
     createdAt: goal.created_at
   };
+};
+
+export const listGoals = async (matchId: string) => {
+  const result = await pool.query<GoalListRow>(
+    `SELECT
+      mg.id,
+      mg.match_id,
+      mg.scoring_team_id,
+      mg.scoring_player_id,
+      mg.minute,
+      mg.created_at,
+      u.full_name AS scoring_player_name
+    FROM match_goals mg
+    JOIN users u ON u.id = mg.scoring_player_id
+    WHERE mg.match_id = $1
+    ORDER BY mg.created_at ASC`,
+    [matchId]
+  );
+
+  return result.rows.map((goal) => ({
+    id: goal.id,
+    matchId: goal.match_id,
+    scoringTeamId: goal.scoring_team_id,
+    scoringPlayerId: goal.scoring_player_id,
+    scoringPlayerName: goal.scoring_player_name,
+    minute: goal.minute,
+    createdAt: goal.created_at
+  }));
 };
 
 export const deleteGoal = async (goalId: string) => {

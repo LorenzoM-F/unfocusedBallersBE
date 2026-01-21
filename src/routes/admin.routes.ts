@@ -16,7 +16,13 @@ import {
   listTournaments,
   updateTournament
 } from "../services/tournament.service";
-import { createGoal, deleteGoal, updateMatch, listBrackets } from "../services/bracket.service";
+import {
+  createGoal,
+  deleteGoal,
+  updateMatch,
+  listBrackets,
+  listGoals
+} from "../services/bracket.service";
 
 const router = Router();
 
@@ -240,6 +246,19 @@ router.post("/matches/:id/goals", async (req, res, next) => {
       payload.minute
     );
     res.status(201).json({ goal });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return next(new HttpError(400, "Invalid request"));
+    }
+    return next(error as Error);
+  }
+});
+
+router.get("/matches/:id/goals", async (req, res, next) => {
+  try {
+    const matchId = z.string().uuid().parse(req.params.id);
+    const goals = await listGoals(matchId);
+    res.json({ goals });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return next(new HttpError(400, "Invalid request"));
