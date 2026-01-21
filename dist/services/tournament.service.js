@@ -1,0 +1,211 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.generateTeamsAndBracket = exports.getTournamentWithWaitingPool = exports.listTournaments = exports.updateTournament = exports.createTournament = exports.getLatestWinner = void 0;
+const db_1 = require("../db");
+const errorHandler_1 = require("../middleware/errorHandler");
+const toTournamentResponse = (row) => ({
+    id: row.id,
+    name: row.name,
+    location: row.location,
+    startTime: row.start_time,
+    formatSnippet: row.format_snippet,
+    status: row.status
+});
+const getLatestWinner = async () => {
+    const result = await db_1.pool.query(`SELECT
+      tw.headline,
+      tw.hero_image_url,
+      tw.won_on,
+      teams.name AS team_name,
+      tournaments.name AS tournament_name
+    FROM tournament_winners tw
+    JOIN teams ON teams.id = tw.team_id
+    JOIN tournaments ON tournaments.id = tw.tournament_id
+    ORDER BY tw.won_on DESC, tw.created_at DESC
+    LIMIT 1`);
+    const winner = result.rows[0];
+    if (!winner) {
+        return null;
+    }
+    return {
+        headline: winner.headline,
+        heroImageUrl: winner.hero_image_url,
+        wonOn: winner.won_on,
+        teamName: winner.team_name,
+        tournamentName: winner.tournament_name
+    };
+};
+exports.getLatestWinner = getLatestWinner;
+const createTournament = async (input) => {
+    var _a, _b;
+    const result = await db_1.pool.query("INSERT INTO tournaments (name, location, start_time) VALUES ($1, $2, $3) RETURNING id, name, location, start_time, format_snippet, status", [input.name, (_a = input.location) !== null && _a !== void 0 ? _a : null, (_b = input.startTime) !== null && _b !== void 0 ? _b : null]);
+    return toTournamentResponse(result.rows[0]);
+};
+exports.createTournament = createTournament;
+const updateTournament = async (id, input) => {
+    var _a, _b;
+    const updates = [];
+    const values = [];
+    let index = 1;
+    const addField = (field, value) => {
+        updates.push(`${field} = $${index}`);
+        values.push(value);
+        index += 1;
+    };
+    if (input.name !== undefined)
+        addField("name", input.name);
+    if (input.location !== undefined)
+        addField("location", (_a = input.location) !== null && _a !== void 0 ? _a : null);
+    if (input.startTime !== undefined)
+        addField("start_time", (_b = input.startTime) !== null && _b !== void 0 ? _b : null);
+    if (input.status !== undefined)
+        addField("status", input.status);
+    if (updates.length === 0) {
+        throw new errorHandler_1.HttpError(400, "No fields to update");
+    }
+    updates.push(`updated_at = now()`);
+    values.push(id);
+    const result = await db_1.pool.query(`UPDATE tournaments SET ${updates.join(", ")} WHERE id = $${index} RETURNING id, name, location, start_time, format_snippet, status`, values);
+    const tournament = result.rows[0];
+    if (!tournament) {
+        throw new errorHandler_1.HttpError(404, "Tournament not found");
+    }
+    return toTournamentResponse(tournament);
+};
+exports.updateTournament = updateTournament;
+const listTournaments = async () => {
+    const result = await db_1.pool.query("SELECT id, name, location, start_time, format_snippet, status FROM tournaments ORDER BY created_at ASC");
+    return result.rows.map((row) => toTournamentResponse(row));
+};
+exports.listTournaments = listTournaments;
+const getTournamentWithWaitingPool = async (id) => {
+    const tournamentResult = await db_1.pool.query("SELECT id, name, location, start_time, format_snippet, status FROM tournaments WHERE id = $1", [id]);
+    const tournament = tournamentResult.rows[0];
+    if (!tournament) {
+        throw new errorHandler_1.HttpError(404, "Tournament not found");
+    }
+    const waitingResult = await db_1.pool.query(`SELECT u.id, u.full_name
+     FROM tournament_registrations tr
+     JOIN users u ON u.id = tr.user_id
+     WHERE tr.tournament_id = $1 AND tr.status = 'WAITING'
+     ORDER BY tr.created_at ASC`, [id]);
+    return {
+        tournament: toTournamentResponse(tournament),
+        waitingPool: waitingResult.rows.map((row) => ({
+            id: row.id,
+            fullName: row.full_name
+        }))
+    };
+};
+exports.getTournamentWithWaitingPool = getTournamentWithWaitingPool;
+const shuffle = (items) => {
+    const result = [...items];
+    for (let i = result.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+};
+const ensureTeamCount = async (tournamentId, maxTeams, useClient) => {
+    const existing = await useClient.query("SELECT id, name, tournament_id FROM teams WHERE tournament_id = $1 ORDER BY name ASC", [tournamentId]);
+    if (existing.rows.length > maxTeams) {
+        throw new errorHandler_1.HttpError(400, "Too many teams for tournament");
+    }
+    const teams = [...existing.rows];
+    if (teams.length < maxTeams) {
+        for (let i = teams.length; i < maxTeams; i += 1) {
+            const name = `Team ${i + 1}`;
+            const created = await useClient.query("INSERT INTO teams (name, tournament_id) VALUES ($1, $2) RETURNING id, name, tournament_id", [name, tournamentId]);
+            teams.push(created.rows[0]);
+        }
+    }
+    return teams;
+};
+const resetMatches = async (tournamentId, useClient) => {
+    await useClient.query("DELETE FROM matches WHERE tournament_id = $1", [
+        tournamentId
+    ]);
+};
+const createMatches = async (tournamentId, teams, useClient) => {
+    var _a, _b, _c, _d;
+    const [team1, team2, team3, team4] = teams;
+    const matches = [
+        {
+            matchType: "SEMI_1",
+            teamA: (_a = team1 === null || team1 === void 0 ? void 0 : team1.id) !== null && _a !== void 0 ? _a : null,
+            teamB: (_b = team2 === null || team2 === void 0 ? void 0 : team2.id) !== null && _b !== void 0 ? _b : null
+        },
+        {
+            matchType: "SEMI_2",
+            teamA: (_c = team3 === null || team3 === void 0 ? void 0 : team3.id) !== null && _c !== void 0 ? _c : null,
+            teamB: (_d = team4 === null || team4 === void 0 ? void 0 : team4.id) !== null && _d !== void 0 ? _d : null
+        },
+        {
+            matchType: "FINAL",
+            teamA: null,
+            teamB: null
+        },
+        {
+            matchType: "THIRD_PLACE",
+            teamA: null,
+            teamB: null
+        }
+    ];
+    const created = [];
+    for (const match of matches) {
+        const result = await useClient.query(`INSERT INTO matches (tournament_id, match_type, team_a_id, team_b_id, score_a, score_b, status)
+       VALUES ($1, $2, $3, $4, 0, 0, 'SCHEDULED')
+       RETURNING id, match_type`, [tournamentId, match.matchType, match.teamA, match.teamB]);
+        created.push(result.rows[0]);
+    }
+    return created;
+};
+const generateTeamsAndBracket = async (tournamentId, regenerate) => {
+    const client = await db_1.pool.connect();
+    try {
+        await client.query("BEGIN");
+        const tournamentResult = await client.query("SELECT id, status, max_teams, players_per_team FROM tournaments WHERE id = $1", [tournamentId]);
+        const tournament = tournamentResult.rows[0];
+        if (!tournament) {
+            throw new errorHandler_1.HttpError(404, "Tournament not found");
+        }
+        if (!["REGISTRATION_OPEN", "TEAMS_LOCKED"].includes(tournament.status)) {
+            throw new errorHandler_1.HttpError(400, "Tournament status does not allow team generation");
+        }
+        if (regenerate) {
+            await client.query("UPDATE tournament_registrations SET status = 'WAITING' WHERE tournament_id = $1 AND status = 'ASSIGNED'", [tournamentId]);
+            await resetMatches(tournamentId, client);
+        }
+        const requiredCount = tournament.max_teams * tournament.players_per_team;
+        const waiting = await client.query("SELECT user_id FROM tournament_registrations WHERE tournament_id = $1 AND status = 'WAITING' ORDER BY created_at ASC", [tournamentId]);
+        if (waiting.rows.length !== requiredCount) {
+            throw new errorHandler_1.HttpError(400, "Invalid number of registrations");
+        }
+        const teams = await ensureTeamCount(tournamentId, tournament.max_teams, client);
+        await client.query("DELETE FROM team_players WHERE team_id IN (SELECT id FROM teams WHERE tournament_id = $1)", [tournamentId]);
+        const shuffled = shuffle(waiting.rows.map((row) => row.user_id));
+        const teamSize = tournament.players_per_team;
+        for (let teamIndex = 0; teamIndex < teams.length; teamIndex += 1) {
+            const team = teams[teamIndex];
+            const members = shuffled.slice(teamIndex * teamSize, teamIndex * teamSize + teamSize);
+            for (const userId of members) {
+                await client.query("INSERT INTO team_players (team_id, user_id) VALUES ($1, $2)", [team.id, userId]);
+            }
+        }
+        await client.query("UPDATE tournament_registrations SET status = 'ASSIGNED' WHERE tournament_id = $1 AND status = 'WAITING'", [tournamentId]);
+        await client.query("UPDATE tournaments SET status = 'TEAMS_LOCKED', updated_at = now() WHERE id = $1", [tournamentId]);
+        if (!regenerate) {
+            await resetMatches(tournamentId, client);
+        }
+        await createMatches(tournamentId, teams, client);
+        await client.query("COMMIT");
+    }
+    catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    }
+    finally {
+        client.release();
+    }
+};
+exports.generateTeamsAndBracket = generateTeamsAndBracket;
