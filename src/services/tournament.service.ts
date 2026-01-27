@@ -213,14 +213,27 @@ const ensureTeamCount = async (
     }
   }
 
-  for (let index = 0; index < teams.length; index += 1) {
-    const team = teams[index];
-    const color = TEAM_COLORS[index] ?? null;
-    if (team.color !== color) {
-      await useClient.query(
-        "UPDATE teams SET color = $1, updated_at = now() WHERE id = $2",
-        [color, team.id]
-      );
+  const desiredColors = teams.map((_, index) => TEAM_COLORS[index] ?? null);
+  const needsColorUpdate = teams.some(
+    (team, index) => team.color !== desiredColors[index]
+  );
+
+  if (needsColorUpdate) {
+    // Clear colors first to avoid unique constraint conflicts when swapping colors.
+    await useClient.query(
+      "UPDATE teams SET color = NULL, updated_at = now() WHERE tournament_id = $1 AND color IS NOT NULL",
+      [tournamentId]
+    );
+
+    for (let index = 0; index < teams.length; index += 1) {
+      const team = teams[index];
+      const color = desiredColors[index];
+      if (color !== null) {
+        await useClient.query(
+          "UPDATE teams SET color = $1, updated_at = now() WHERE id = $2",
+          [color, team.id]
+        );
+      }
       team.color = color;
     }
   }
