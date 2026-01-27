@@ -3,12 +3,13 @@ import { z } from "zod";
 import { authenticate } from "../middleware/auth";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { HttpError } from "../middleware/errorHandler";
+import { TEAM_COLORS } from "../constants/teamColors";
 import { createPlayer, listPlayers } from "../services/auth.service";
 import {
   addPlayerToTeam,
   createTeam,
   listTeams,
-  updateTeamName
+  updateTeam
 } from "../services/team.service";
 import {
   createTournament,
@@ -33,13 +34,17 @@ const playerSchema = z.object({
   fullName: z.string().min(1)
 });
 
+const teamColorEnum = z.enum(TEAM_COLORS);
+
 const teamCreateSchema = z.object({
   name: z.string().min(1),
-  tournamentId: z.string().uuid().optional()
+  tournamentId: z.string().uuid().optional(),
+  color: teamColorEnum.nullable().optional()
 });
 
 const teamUpdateSchema = z.object({
-  name: z.string().min(1)
+  name: z.string().min(1).optional(),
+  color: teamColorEnum.nullable().optional()
 });
 
 const addPlayerSchema = z.object({
@@ -105,8 +110,8 @@ router.get("/players", async (_req, res, next) => {
 
 router.post("/teams", async (req, res, next) => {
   try {
-    const { name, tournamentId } = teamCreateSchema.parse(req.body);
-    const team = await createTeam(name, tournamentId);
+    const { name, tournamentId, color } = teamCreateSchema.parse(req.body);
+    const team = await createTeam(name, tournamentId, color);
     res.status(201).json({ team });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -118,8 +123,8 @@ router.post("/teams", async (req, res, next) => {
 
 router.patch("/teams/:id", async (req, res, next) => {
   try {
-    const { name } = teamUpdateSchema.parse(req.body);
-    const team = await updateTeamName(req.params.id, name);
+    const payload = teamUpdateSchema.parse(req.body);
+    const team = await updateTeam(req.params.id, payload);
     res.json({ team });
   } catch (error) {
     if (error instanceof z.ZodError) {

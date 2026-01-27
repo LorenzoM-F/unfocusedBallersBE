@@ -1,5 +1,7 @@
 import { pool } from "../db";
 import { HttpError } from "../middleware/errorHandler";
+import type { TeamColor } from "../constants/teamColors";
+import { TEAM_COLORS } from "../utils/teamColors";
 
 type TournamentRow = {
   id: string;
@@ -42,6 +44,7 @@ type TeamRow = {
   id: string;
   name: string;
   tournament_id: string;
+  color: TeamColor | null;
 };
 
 type RegistrationRow = {
@@ -190,7 +193,7 @@ const ensureTeamCount = async (
   useClient: DbClient
 ) => {
   const existing = await useClient.query<TeamRow>(
-    "SELECT id, name, tournament_id FROM teams WHERE tournament_id = $1 ORDER BY name ASC",
+    "SELECT id, name, tournament_id, color FROM teams WHERE tournament_id = $1 ORDER BY created_at ASC, id ASC",
     [tournamentId]
   );
 
@@ -203,10 +206,22 @@ const ensureTeamCount = async (
     for (let i = teams.length; i < maxTeams; i += 1) {
       const name = `Team ${i + 1}`;
       const created = await useClient.query<TeamRow>(
-        "INSERT INTO teams (name, tournament_id) VALUES ($1, $2) RETURNING id, name, tournament_id",
+        "INSERT INTO teams (name, tournament_id) VALUES ($1, $2) RETURNING id, name, tournament_id, color",
         [name, tournamentId]
       );
       teams.push(created.rows[0]);
+    }
+  }
+
+  for (let index = 0; index < teams.length; index += 1) {
+    const team = teams[index];
+    const color = TEAM_COLORS[index] ?? null;
+    if (team.color !== color) {
+      await useClient.query(
+        "UPDATE teams SET color = $1, updated_at = now() WHERE id = $2",
+        [color, team.id]
+      );
+      team.color = color;
     }
   }
 
@@ -267,6 +282,7 @@ export const generateTeamsAndBracket = async (
   regenerate: boolean
 ) => {
   const client = await pool.connect();
+  let thrownError: Error | null = null;
   try {
     await client.query("BEGIN");
 
@@ -341,8 +357,21 @@ export const generateTeamsAndBracket = async (
 
     await client.query("COMMIT");
   } catch (error) {
+    const isUniqueViolation = (err: unknown): err is { code: string } =>
+      !!err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code?: string }).code === "23505";
+
+    if (isUniqueViolation(error)) {
+      thrownError = new HttpError(409, "Unique constraint violation");
+    } else if (error instanceof Error) {
+      thrownError = error;
+    } else {
+      thrownError = new Error("Unknown error");
+    }
     await client.query("ROLLBACK");
-    throw error;
+    throw thrownError;
   } finally {
     client.release();
   }

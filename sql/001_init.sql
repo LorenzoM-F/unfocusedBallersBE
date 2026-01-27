@@ -21,11 +21,15 @@ CREATE TABLE IF NOT EXISTS teams (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   tournament_id UUID NULL,
+  color TEXT NULL CHECK (color IN ('BLUE', 'BLACK', 'WHITE', 'RED')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_teams_tournament ON teams(tournament_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_tournament_color_unique
+  ON teams(tournament_id, color)
+  WHERE color IS NOT NULL;
 
 -- TEAM MEMBERSHIP
 CREATE TABLE IF NOT EXISTS team_players (
