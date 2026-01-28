@@ -44,6 +44,11 @@ type PlayerGoalRow = {
   goal_count: number;
 };
 
+type PlayerAssistRow = {
+  assist_player_id: string;
+  assist_count: number;
+};
+
 type TeamMatchRow = {
   team_id: string;
   match_count: number;
@@ -181,6 +186,17 @@ export const getTournamentStats = async (tournamentId: string) => {
     [tournamentId]
   );
 
+  const assistsByPlayerResult = await pool.query<PlayerAssistRow>(
+    `SELECT
+      mg.assist_player_id,
+      COUNT(*)::int AS assist_count
+    FROM match_goals mg
+    JOIN matches m ON m.id = mg.match_id
+    WHERE m.tournament_id = $1 AND mg.assist_player_id IS NOT NULL
+    GROUP BY mg.assist_player_id`,
+    [tournamentId]
+  );
+
   const matchesByTeamResult = await pool.query<TeamMatchRow>(
     `SELECT
       team_id,
@@ -202,6 +218,14 @@ export const getTournamentStats = async (tournamentId: string) => {
   const goalsByPlayer = goalsByPlayerResult.rows.reduce<Record<string, number>>(
     (acc, row) => {
       acc[row.scoring_player_id] = row.goal_count;
+      return acc;
+    },
+    {}
+  );
+
+  const assistsByPlayer = assistsByPlayerResult.rows.reduce<Record<string, number>>(
+    (acc, row) => {
+      acc[row.assist_player_id] = row.assist_count;
       return acc;
     },
     {}
@@ -237,9 +261,37 @@ export const getTournamentStats = async (tournamentId: string) => {
     return a.playerName.localeCompare(b.playerName);
   });
 
+  const assistsLeaderboard = playerResult.rows.map((player) => {
+    const assists = assistsByPlayer[player.player_id] ?? 0;
+    const matchesPlayed = matchesByTeam[player.team_id] ?? 0;
+    const assistsPerGame = matchesPlayed > 0 ? assists / matchesPlayed : 0;
+
+    return {
+      playerId: player.player_id,
+      playerName: player.player_name,
+      teamId: player.team_id,
+      teamName: player.team_name,
+      assists,
+      matchesPlayed,
+      assistsPerGame
+    };
+  });
+
+  assistsLeaderboard.sort((a, b) => {
+    if (b.assists !== a.assists) return b.assists - a.assists;
+    if (b.assistsPerGame !== a.assistsPerGame)
+      return b.assistsPerGame - a.assistsPerGame;
+    return a.playerName.localeCompare(b.playerName);
+  });
+
   const matchesPlayed = matches.filter((match) => match.status !== "SCHEDULED").length;
   const totalGoals = goalsResult.rows.length;
+  const totalAssists = assistsByPlayerResult.rows.reduce(
+    (sum, row) => sum + row.assist_count,
+    0
+  );
   const goalsPerMatch = matchesPlayed > 0 ? totalGoals / matchesPlayed : 0;
+  const assistsPerMatch = matchesPlayed > 0 ? totalAssists / matchesPlayed : 0;
 
   return {
     tournament: {
@@ -250,9 +302,12 @@ export const getTournamentStats = async (tournamentId: string) => {
     summary: {
       matchesPlayed,
       totalGoals,
-      goalsPerMatch
+      goalsPerMatch,
+      totalAssists,
+      assistsPerMatch
     },
     leaderboard,
+    assistsLeaderboard,
     matches
   };
 };
