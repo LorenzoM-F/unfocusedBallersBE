@@ -22,7 +22,10 @@ import {
   deleteGoal,
   updateMatch,
   listBrackets,
-  listGoals
+  listGoals,
+  createAssist,
+  listAssists,
+  deleteAssist
 } from "../services/bracket.service";
 
 const router = Router();
@@ -84,6 +87,12 @@ const goalCreateSchema = z.object({
   scoringPlayerId: z.string().uuid(),
   scoringTeamId: z.string().uuid(),
   assistPlayerId: z.string().uuid().optional(),
+  minute: z.number().int().min(0).optional()
+});
+
+const assistCreateSchema = z.object({
+  assistingPlayerId: z.string().uuid(),
+  assistingTeamId: z.string().uuid(),
   minute: z.number().int().min(0).optional()
 });
 
@@ -279,6 +288,50 @@ router.delete("/goals/:goalId", async (req, res, next) => {
     const goalId = z.string().uuid().parse(req.params.goalId);
     const goal = await deleteGoal(goalId);
     res.json({ goal });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return next(new HttpError(400, "Invalid request"));
+    }
+    return next(error as Error);
+  }
+});
+
+router.post("/matches/:id/assists", async (req, res, next) => {
+  try {
+    const payload = assistCreateSchema.parse(req.body);
+    const assist = await createAssist(
+      req.params.id,
+      payload.assistingTeamId,
+      payload.assistingPlayerId,
+      payload.minute
+    );
+    res.status(201).json({ assist });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return next(new HttpError(400, "Invalid request"));
+    }
+    return next(error as Error);
+  }
+});
+
+router.get("/matches/:id/assists", async (req, res, next) => {
+  try {
+    const matchId = z.string().uuid().parse(req.params.id);
+    const assists = await listAssists(matchId);
+    res.json({ assists });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return next(new HttpError(400, "Invalid request"));
+    }
+    return next(error as Error);
+  }
+});
+
+router.delete("/assists/:assistId", async (req, res, next) => {
+  try {
+    const assistId = z.string().uuid().parse(req.params.assistId);
+    const assist = await deleteAssist(assistId);
+    res.json({ assist });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return next(new HttpError(400, "Invalid request"));

@@ -39,6 +39,19 @@ type GoalListRow = GoalRow & {
   assist_player_name: string | null;
 };
 
+type AssistRow = {
+  id: string;
+  match_id: string;
+  assisting_team_id: string;
+  assisting_player_id: string;
+  minute: number | null;
+  created_at: string;
+};
+
+type AssistListRow = AssistRow & {
+  assisting_player_name: string;
+};
+
 export const listBrackets = async (tournamentId: string) => {
   const result = await pool.query<BracketRow>(
     `SELECT
@@ -264,5 +277,90 @@ export const deleteGoal = async (goalId: string) => {
     assistPlayerId: goal.assist_player_id,
     minute: goal.minute,
     createdAt: goal.created_at
+  };
+};
+
+export const createAssist = async (
+  matchId: string,
+  assistingTeamId: string,
+  assistingPlayerId: string,
+  minute?: number
+) => {
+  const matchResult = await pool.query<MatchRow>(
+    "SELECT id, team_a_id, team_b_id FROM matches WHERE id = $1",
+    [matchId]
+  );
+
+  const match = matchResult.rows[0];
+  if (!match) {
+    throw new HttpError(404, "Match not found");
+  }
+
+  if (![match.team_a_id, match.team_b_id].includes(assistingTeamId)) {
+    throw new HttpError(400, "Assisting team is not in match");
+  }
+
+  const result = await pool.query<AssistRow>(
+    "INSERT INTO match_assists (match_id, assisting_team_id, assisting_player_id, minute) VALUES ($1, $2, $3, $4) RETURNING id, match_id, assisting_team_id, assisting_player_id, minute, created_at",
+    [matchId, assistingTeamId, assistingPlayerId, minute ?? null]
+  );
+
+  const assist = result.rows[0];
+  return {
+    id: assist.id,
+    matchId: assist.match_id,
+    assistingTeamId: assist.assisting_team_id,
+    assistingPlayerId: assist.assisting_player_id,
+    minute: assist.minute,
+    createdAt: assist.created_at
+  };
+};
+
+export const listAssists = async (matchId: string) => {
+  const result = await pool.query<AssistListRow>(
+    `SELECT
+      ma.id,
+      ma.match_id,
+      ma.assisting_team_id,
+      ma.assisting_player_id,
+      ma.minute,
+      ma.created_at,
+      u.full_name AS assisting_player_name
+    FROM match_assists ma
+    JOIN users u ON u.id = ma.assisting_player_id
+    WHERE ma.match_id = $1
+    ORDER BY ma.created_at ASC`,
+    [matchId]
+  );
+
+  return result.rows.map((assist) => ({
+    id: assist.id,
+    matchId: assist.match_id,
+    assistingTeamId: assist.assisting_team_id,
+    assistingPlayerId: assist.assisting_player_id,
+    assistingPlayerName: assist.assisting_player_name,
+    minute: assist.minute,
+    createdAt: assist.created_at
+  }));
+};
+
+export const deleteAssist = async (assistId: string) => {
+  const result = await pool.query<AssistRow>(
+    "DELETE FROM match_assists WHERE id = $1 RETURNING id, match_id, assisting_team_id, assisting_player_id, minute, created_at",
+    [assistId]
+  );
+
+  const assist = result.rows[0];
+  if (!assist) {
+    throw new HttpError(404, "Assist not found");
+  }
+
+  return {
+    id: assist.id,
+    matchId: assist.match_id,
+    assistingTeamId: assist.assisting_team_id,
+    assistingPlayerId: assist.assisting_player_id,
+    minute: assist.minute,
+    createdAt: assist.created_at
   };
 };
