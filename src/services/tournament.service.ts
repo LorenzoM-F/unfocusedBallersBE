@@ -22,6 +22,15 @@ type WinnerRow = {
   tournament_name: string;
 };
 
+type FinalWinnerRow = {
+  score_a: number;
+  score_b: number;
+  team_a_name: string | null;
+  team_b_name: string | null;
+  tournament_name: string;
+  won_on: string;
+};
+
 type WaitingPlayerRow = {
   id: string;
   full_name: string;
@@ -82,7 +91,44 @@ export const getLatestWinner = async () => {
 
   const winner = result.rows[0];
   if (!winner) {
-    return null;
+    const fallback = await pool.query<FinalWinnerRow>(
+      `SELECT
+        m.score_a,
+        m.score_b,
+        ta.name AS team_a_name,
+        tb.name AS team_b_name,
+        t.name AS tournament_name,
+        COALESCE(m.updated_at, m.created_at) AS won_on
+      FROM matches m
+      JOIN tournaments t ON t.id = m.tournament_id
+      LEFT JOIN teams ta ON ta.id = m.team_a_id
+      LEFT JOIN teams tb ON tb.id = m.team_b_id
+      WHERE m.match_type = 'FINAL' AND m.status = 'FINAL' AND m.score_a != m.score_b
+      ORDER BY m.updated_at DESC NULLS LAST, m.created_at DESC
+      LIMIT 1`
+    );
+
+    const finalMatch = fallback.rows[0];
+    if (!finalMatch) {
+      return null;
+    }
+
+    const teamName =
+      finalMatch.score_a > finalMatch.score_b
+        ? finalMatch.team_a_name
+        : finalMatch.team_b_name;
+
+    if (!teamName) {
+      return null;
+    }
+
+    return {
+      headline: `${teamName} are the champions`,
+      heroImageUrl: null,
+      wonOn: finalMatch.won_on,
+      teamName,
+      tournamentName: finalMatch.tournament_name
+    };
   }
 
   return {
