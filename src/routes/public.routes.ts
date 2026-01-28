@@ -8,7 +8,7 @@ import {
   getTournamentWithWaitingPool,
   listTournaments
 } from "../services/tournament.service";
-import { getTournamentStats } from "../services/stats.service";
+import { getOverallStats, getTournamentStats } from "../services/stats.service";
 
 const router = Router();
 
@@ -81,6 +81,22 @@ router.get("/stats", async (req, res, next) => {
     }
 
     const stats = await getTournamentStats(query.data.tournamentId);
+    res.json(stats);
+  } catch (error) {
+    return next(error as Error);
+  }
+});
+
+router.get("/stats/overall", async (req, res, next) => {
+  try {
+    const query = z
+      .object({ tournamentId: z.string().uuid() })
+      .safeParse(req.query);
+    if (!query.success) {
+      throw new HttpError(400, "Invalid request");
+    }
+
+    const stats = await getOverallStats(query.data.tournamentId);
     res.json(stats);
   } catch (error) {
     return next(error as Error);
