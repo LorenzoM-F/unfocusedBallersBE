@@ -24,8 +24,10 @@ type GoalRow = {
   match_id: string;
   scoring_team_id: string;
   scoring_player_id: string;
+  assist_player_id: string | null;
   scoring_team_name: string;
   scoring_player_name: string;
+  assist_player_name: string | null;
   minute: number | null;
   created_at: string;
 };
@@ -65,6 +67,8 @@ const mapMatchResponse = (match: MatchRow) => ({
     scoringTeamName: string;
     scoringPlayerId: string;
     scoringPlayerName: string;
+    assistPlayerId: string | null;
+    assistPlayerName: string | null;
     minute: number | null;
     createdAt: string;
   }>
@@ -120,12 +124,15 @@ export const getTournamentStats = async (tournamentId: string) => {
       mg.match_id,
       mg.scoring_team_id,
       mg.scoring_player_id,
+      mg.assist_player_id,
       mg.minute,
       mg.created_at,
       u.full_name AS scoring_player_name,
-      t.name AS scoring_team_name
+      t.name AS scoring_team_name,
+      au.full_name AS assist_player_name
     FROM match_goals mg
     JOIN users u ON u.id = mg.scoring_player_id
+    LEFT JOIN users au ON au.id = mg.assist_player_id
     JOIN teams t ON t.id = mg.scoring_team_id
     JOIN matches m ON m.id = mg.match_id
     WHERE m.tournament_id = $1
@@ -142,6 +149,8 @@ export const getTournamentStats = async (tournamentId: string) => {
       scoringTeamName: goal.scoring_team_name,
       scoringPlayerId: goal.scoring_player_id,
       scoringPlayerName: goal.scoring_player_name,
+      assistPlayerId: goal.assist_player_id,
+      assistPlayerName: goal.assist_player_name,
       minute: goal.minute,
       createdAt: goal.created_at
     });

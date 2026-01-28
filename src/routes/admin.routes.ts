@@ -83,6 +83,7 @@ const matchUpdateSchema = z.object({
 const goalCreateSchema = z.object({
   scoringPlayerId: z.string().uuid(),
   scoringTeamId: z.string().uuid(),
+  assistPlayerId: z.string().uuid().optional(),
   minute: z.number().int().min(0).optional()
 });
 
@@ -248,6 +249,7 @@ router.post("/matches/:id/goals", async (req, res, next) => {
       req.params.id,
       payload.scoringTeamId,
       payload.scoringPlayerId,
+      payload.assistPlayerId,
       payload.minute
     );
     res.status(201).json({ goal });

@@ -29,12 +29,14 @@ type GoalRow = {
   match_id: string;
   scoring_team_id: string;
   scoring_player_id: string;
+  assist_player_id: string | null;
   minute: number | null;
   created_at: string;
 };
 
 type GoalListRow = GoalRow & {
   scoring_player_name: string;
+  assist_player_name: string | null;
 };
 
 export const listBrackets = async (tournamentId: string) => {
@@ -176,6 +178,7 @@ export const createGoal = async (
   matchId: string,
   scoringTeamId: string,
   scoringPlayerId: string,
+  assistPlayerId?: string,
   minute?: number
 ) => {
   const matchResult = await pool.query<MatchRow>(
@@ -193,8 +196,8 @@ export const createGoal = async (
   }
 
   const result = await pool.query<GoalRow>(
-    "INSERT INTO match_goals (match_id, scoring_team_id, scoring_player_id, minute) VALUES ($1, $2, $3, $4) RETURNING id, match_id, scoring_team_id, scoring_player_id, minute, created_at",
-    [matchId, scoringTeamId, scoringPlayerId, minute ?? null]
+    "INSERT INTO match_goals (match_id, scoring_team_id, scoring_player_id, assist_player_id, minute) VALUES ($1, $2, $3, $4, $5) RETURNING id, match_id, scoring_team_id, scoring_player_id, assist_player_id, minute, created_at",
+    [matchId, scoringTeamId, scoringPlayerId, assistPlayerId ?? null, minute ?? null]
   );
 
   const goal = result.rows[0];
@@ -203,6 +206,7 @@ export const createGoal = async (
     matchId: goal.match_id,
     scoringTeamId: goal.scoring_team_id,
     scoringPlayerId: goal.scoring_player_id,
+    assistPlayerId: goal.assist_player_id,
     minute: goal.minute,
     createdAt: goal.created_at
   };
@@ -215,11 +219,14 @@ export const listGoals = async (matchId: string) => {
       mg.match_id,
       mg.scoring_team_id,
       mg.scoring_player_id,
+      mg.assist_player_id,
       mg.minute,
       mg.created_at,
-      u.full_name AS scoring_player_name
+      u.full_name AS scoring_player_name,
+      au.full_name AS assist_player_name
     FROM match_goals mg
     JOIN users u ON u.id = mg.scoring_player_id
+    LEFT JOIN users au ON au.id = mg.assist_player_id
     WHERE mg.match_id = $1
     ORDER BY mg.created_at ASC`,
     [matchId]
@@ -231,6 +238,8 @@ export const listGoals = async (matchId: string) => {
     scoringTeamId: goal.scoring_team_id,
     scoringPlayerId: goal.scoring_player_id,
     scoringPlayerName: goal.scoring_player_name,
+    assistPlayerId: goal.assist_player_id,
+    assistPlayerName: goal.assist_player_name,
     minute: goal.minute,
     createdAt: goal.created_at
   }));
@@ -238,7 +247,7 @@ export const listGoals = async (matchId: string) => {
 
 export const deleteGoal = async (goalId: string) => {
   const result = await pool.query<GoalRow>(
-    "DELETE FROM match_goals WHERE id = $1 RETURNING id, match_id, scoring_team_id, scoring_player_id, minute, created_at",
+    "DELETE FROM match_goals WHERE id = $1 RETURNING id, match_id, scoring_team_id, scoring_player_id, assist_player_id, minute, created_at",
     [goalId]
   );
 
@@ -252,6 +261,7 @@ export const deleteGoal = async (goalId: string) => {
     matchId: goal.match_id,
     scoringTeamId: goal.scoring_team_id,
     scoringPlayerId: goal.scoring_player_id,
+    assistPlayerId: goal.assist_player_id,
     minute: goal.minute,
     createdAt: goal.created_at
   };
